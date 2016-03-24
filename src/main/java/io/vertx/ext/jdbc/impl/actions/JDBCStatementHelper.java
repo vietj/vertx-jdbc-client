@@ -57,6 +57,8 @@ final class JDBCStatementHelper {
       if (value != null) {
         if (value instanceof String) {
           statement.setObject(i + 1, optimisticCast((String) value));
+        } else if (value instanceof JsonArray) {
+          statement.setArray(i + 1, optimisticCast(statement.getConnection(), (JsonArray) value));
         } else {
           statement.setObject(i + 1, value);
         }
@@ -89,6 +91,8 @@ final class JDBCStatementHelper {
       if (value != null) {
         if (value instanceof String) {
           statement.setObject(i + 1, optimisticCast((String) value));
+        } else if (value instanceof JsonArray) {
+          statement.setArray(i + 1, optimisticCast(statement.getConnection(), (JsonArray) value));
         } else {
           statement.setObject(i + 1, value);
         }
@@ -267,5 +271,62 @@ final class JDBCStatementHelper {
 
     // unknown
     return value;
+  }
+
+  public static Array optimisticCast(Connection conn, JsonArray value) throws SQLException {
+
+    if (value.size() == 0) {
+      return conn.createArrayOf("oid", new Object[0]);
+    }
+    // try to identify the data type in the array
+    String type = null;
+
+    for (Object o : value) {
+      if (o != null) {
+        if (o instanceof Integer) {
+          type = "integer";
+          break;
+        } else if (o instanceof Long) {
+          type = "long";
+          break;
+        } else if (o instanceof Float) {
+          type = "float";
+          break;
+        } else if (o instanceof Double) {
+          type = "double";
+          break;
+        } else if (o instanceof Boolean) {
+          type = "boolean";
+          break;
+        } else if (o instanceof String) {
+          Object oo = optimisticCast((String) o);
+
+          if (oo instanceof Time) {
+            type = "time";
+            break;
+          } else if (oo instanceof Date) {
+            type = "date";
+            break;
+          } else if (oo instanceof Timestamp) {
+            type = "timestamp";
+            break;
+          } else if (oo instanceof UUID) {
+            type = "uuid";
+            break;
+          } else {
+            type = "string";
+            break;
+          }
+        } else {
+          throw new SQLException("Unsupported type in array:" + o.getClass().getName());
+        }
+      }
+    }
+
+    if (type == null) {
+      throw new SQLException("Could not infer array data type");
+    }
+
+    return conn.createArrayOf(type, value.getList().toArray());
   }
 }
