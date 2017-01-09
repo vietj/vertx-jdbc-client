@@ -20,6 +20,7 @@ import io.vertx.codegen.annotations.Fluent;
 import io.vertx.codegen.annotations.GenIgnore;
 import io.vertx.codegen.annotations.VertxGen;
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -102,6 +103,8 @@ public interface JDBCClient {
    */
   @Fluent
   JDBCClient getConnection(Handler<AsyncResult<SQLConnection>> handler);
+
+  Future<SQLConnection> getConnection();
 
   /**
    * Close the client

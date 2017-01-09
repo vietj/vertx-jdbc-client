@@ -100,6 +100,13 @@ public class JDBCClientImpl implements JDBCClient {
   }
 
   @Override
+  public Future<SQLConnection> getConnection() {
+    Future<SQLConnection> fut = Future.future();
+    getConnection(fut.completer());
+    return fut;
+  }
+
+  @Override
   public JDBCClient getConnection(Handler<AsyncResult<SQLConnection>> handler) {
     Context ctx = vertx.getOrCreateContext();
     boolean enabled = metrics != null && metrics.isEnabled();

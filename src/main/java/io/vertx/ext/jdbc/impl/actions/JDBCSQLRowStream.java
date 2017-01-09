@@ -185,11 +185,6 @@ class JDBCSQLRowStream implements SQLRowStream {
   }
 
   @Override
-  public void close() {
-    close(null);
-  }
-
-  @Override
   public void close(Handler<AsyncResult<Void>> handler) {
     close0(res -> {
       // close the statement

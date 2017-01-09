@@ -1,5 +1,6 @@
 require 'vertx/vertx'
 require 'vertx-sql/sql_connection'
+require 'vertx/future'
 require 'vertx/util/utils.rb'
 # Generated from io.vertx.ext.jdbc.JDBCClient
 module VertxJdbc
