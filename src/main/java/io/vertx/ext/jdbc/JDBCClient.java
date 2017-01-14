@@ -20,7 +20,6 @@ import io.vertx.codegen.annotations.Fluent;
 import io.vertx.codegen.annotations.GenIgnore;
 import io.vertx.codegen.annotations.VertxGen;
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -29,6 +28,7 @@ import io.vertx.ext.sql.SQLConnection;
 
 import javax.sql.DataSource;
 import java.util.UUID;
+import java.util.concurrent.CompletionStage;
 
 /**
  * An asynchronous client interface for interacting with a JDBC compliant database
@@ -104,7 +104,7 @@ public interface JDBCClient {
   @Fluent
   JDBCClient getConnection(Handler<AsyncResult<SQLConnection>> handler);
 
-  Future<SQLConnection> getConnection();
+  CompletionStage<SQLConnection> getConnection();
 
   /**
    * Close the client

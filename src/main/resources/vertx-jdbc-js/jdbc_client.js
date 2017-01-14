@@ -18,7 +18,6 @@
 var utils = require('vertx-js/util/utils');
 var Vertx = require('vertx-js/vertx');
 var SQLConnection = require('vertx-sql-js/sql_connection');
-var Future = require('vertx-js/future');
 
 var io = Packages.io;
 var JsonObject = io.vertx.core.json.JsonObject;
@@ -42,17 +41,14 @@ var JDBCClient = function(j_val) {
    @param handler {function} the handler which is called when the <code>JdbcConnection</code> object is ready for use. 
    @return {JDBCClient}
    */
-  this.getConnection = function() {
+  this.getConnection = function(handler) {
     var __args = arguments;
-    if (__args.length === 0) {
-      j_jDBCClient["getConnection()"]();
-      return that;
-    }  else if (__args.length === 1 && typeof __args[0] === 'function') {
+    if (__args.length === 1 && typeof __args[0] === 'function') {
       j_jDBCClient["getConnection(io.vertx.core.Handler)"](function(ar) {
       if (ar.succeeded()) {
-        __args[0](utils.convReturnVertxGen(SQLConnection, ar.result()), null);
+        handler(utils.convReturnVertxGen(SQLConnection, ar.result()), null);
       } else {
-        __args[0](null, ar.cause());
+        handler(null, ar.cause());
       }
     });
       return that;

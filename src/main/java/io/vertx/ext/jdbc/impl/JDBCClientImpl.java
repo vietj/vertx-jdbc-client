@@ -21,6 +21,7 @@ import io.vertx.core.impl.VertxInternal;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.core.shareddata.Shareable;
+import io.vertx.core.spi.concurrent.CompletableStage;
 import io.vertx.core.spi.metrics.PoolMetrics;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.jdbc.impl.actions.JDBCStatementHelper;
@@ -32,6 +33,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -100,9 +102,9 @@ public class JDBCClientImpl implements JDBCClient {
   }
 
   @Override
-  public Future<SQLConnection> getConnection() {
-    Future<SQLConnection> fut = Future.future();
-    getConnection(fut.completer());
+  public CompletionStage<SQLConnection> getConnection() {
+    CompletableStage<SQLConnection> fut = CompletableStage.create();
+    getConnection(fut);
     return fut;
   }
 
