@@ -28,9 +28,32 @@ public class ConfigFactory {
   private static final AtomicInteger idGen = new AtomicInteger();
 
   public static JsonObject createConfigForH2() {
+    final int id = idGen.incrementAndGet();
+
     return new JsonObject()
-      .put("url", "jdbc:h2:mem:test-" + idGen.incrementAndGet() + ";DB_CLOSE_DELAY=-1")
-      .put("driver_class", "org.h2.Driver");
+      .put("url", "jdbc:h2:mem:test-" + id + ";DB_CLOSE_DELAY=-1")
+      .put("driver_class", "org.h2.Driver")
+      // Agroal CP config
+      .put("jdbcUrl", "jdbc:h2:mem:test-" + id + ";DB_CLOSE_DELAY=-1")
+      .put("driverClassName", "org.h2.Driver")
+      .put("principal", "")
+      .put("credential", "")
+      .put("minSize", 1)
+      .put("maxSize", 30);
+  }
+
+  public static JsonObject createConfigForHSQLDB() {
+    final int id = idGen.incrementAndGet();
+
+    return new JsonObject()
+      .put("url", "jdbc:hsqldb:mem:test-" + id + "?shutdown=true")
+      .put("driver_class", "org.hsqldb.jdbcDriver")
+      // Agroal CP config
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.AgroalCPDataSourceProvider")
+      .put("jdbcUrl", "jdbc:hsqldb:mem:test-" + id + "?shutdown=true")
+      .put("driverClassName", "org.hsqldb.jdbcDriver")
+      .put("principal", "SA")
+      .put("credential", "");
   }
 
   private ConfigFactory() {
