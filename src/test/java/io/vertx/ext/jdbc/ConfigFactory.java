@@ -33,14 +33,7 @@ public class ConfigFactory {
     return new JsonObject()
       .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
       .put("url", "jdbc:h2:mem:test-" + id + ";DB_CLOSE_DELAY=-1")
-      .put("driver_class", "org.h2.Driver")
-      // Agroal CP config
-      .put("jdbcUrl", "jdbc:h2:mem:test-" + id + ";DB_CLOSE_DELAY=-1")
-      .put("driverClassName", "org.h2.Driver")
-      .put("principal", "")
-      .put("credential", "")
-      .put("minSize", 1)
-      .put("maxSize", 30);
+      .put("driver_class", "org.h2.Driver");
   }
 
   public static JsonObject createConfigForHSQLDB() {
@@ -53,6 +46,18 @@ public class ConfigFactory {
       .put("provider_class", "io.vertx.ext.jdbc.spi.impl.AgroalCPDataSourceProvider")
       .put("jdbcUrl", "jdbc:hsqldb:mem:test-" + id + "?shutdown=true")
       .put("driverClassName", "org.hsqldb.jdbcDriver")
+      .put("principal", "SA")
+      .put("credential", "");
+  }
+
+  public static JsonObject createConfigForDerby() {
+    final int id = idGen.incrementAndGet();
+
+    return new JsonObject()
+      // Agroal CP config
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.AgroalCPDataSourceProvider")
+      .put("jdbcUrl", "jdbc:derby:memory:derby-" + id + ";user=SA;password=;create=true")
+      .put("driverClassName", "org.apache.derby.jdbc.EmbeddedDriver")
       .put("principal", "SA")
       .put("credential", "");
   }
