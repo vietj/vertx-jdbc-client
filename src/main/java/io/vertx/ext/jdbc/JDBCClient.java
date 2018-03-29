@@ -38,7 +38,7 @@ public interface JDBCClient extends SQLClient {
   /**
    * The default data source provider is C3P0
    */
-  String DEFAULT_PROVIDER_CLASS =  "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider";
+  String DEFAULT_PROVIDER_CLASS =  "io.vertx.ext.jdbc.spi.impl.AgroalCPDataSourceProvider";
 
   /**
    * The name of the default data source
