@@ -41,6 +41,7 @@ public class C3P0DataSourceProviderTest extends VertxTestBase {
 
   private JsonObject config() {
     return new JsonObject()
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
       .put("url", "jdbc:hsqldb:hsqls://zoom.zoom.zen.tld/doesnotexist")
       .put("driver_class", "org.hsqldb.jdbcDriver");
   }

@@ -48,8 +48,9 @@ public class JDBCCustomTXIsolationTest extends VertxTestBase {
 
   protected static JsonObject config() {
     return new JsonObject()
-        .put("url", "jdbc:h2:mem:test?shutdown=true")
-        .put("driver_class", "org.h2.Driver");
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
+      .put("url", "jdbc:h2:mem:test?shutdown=true")
+      .put("driver_class", "org.h2.Driver");
   }
 
   @Test

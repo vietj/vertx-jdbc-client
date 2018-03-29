@@ -1,11 +1,10 @@
 package io.vertx.ext.jdbc;
 
+import io.vertx.core.Context;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.sql.ResultSet;
-import io.vertx.ext.sql.SQLClient;
-import io.vertx.ext.sql.SQLConnection;
+import io.vertx.ext.sql.*;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
@@ -17,7 +16,12 @@ import org.junit.runner.RunWith;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.TimeZone;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(VertxUnitRunner.class)
 public class JDBCTest {
@@ -127,10 +131,603 @@ public class JDBCTest {
         test.complete();
       });
 
-      test.await();
+    });
+    test.await();
+  }
+
+  private SQLClient checker(Async test) {
+    return new CloseConnectionChecker(client, v -> {
+      System.out.println("connection closed");
+      test.complete();
     });
   }
 
+
+  @Test
+  public void testOneShotStream1(TestContext should) {
+    final Async test = should.async();
+
+    final AtomicInteger cnt = new AtomicInteger(0);
+    checker(test).queryStream("SELECT * FROM big_table", res -> {
+      should.assertTrue(res.succeeded());
+      SQLRowStream stream = res.result();
+
+      stream
+        .resultSetClosedHandler(v -> stream.moreResults())
+        .handler(row -> cnt.incrementAndGet())
+        .endHandler(v -> should.assertEquals(200, cnt.get()))
+        .exceptionHandler(should::fail);
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testOneShotStream2(TestContext should) {
+    final Async test = should.async();
+
+    final AtomicInteger cnt = new AtomicInteger(0);
+    checker(test).queryStream("SELECT * FROM big_table", res -> {
+      should.assertTrue(res.succeeded());
+      SQLRowStream stream = res.result();
+
+      stream
+        .resultSetClosedHandler(v -> stream.close())
+        .handler(row -> cnt.incrementAndGet())
+        .endHandler(v -> should.fail(new RuntimeException("wrong state")))
+        .exceptionHandler(should::fail);
+    });
+    test.await();
+  }
+
+  @Test
+  public void testOneShotStream3(TestContext should) {
+    final Async test = should.async();
+
+    final AtomicInteger cnt = new AtomicInteger(0);
+    checker(test).queryStream("SELECT * FROM big_table", res -> {
+      should.assertTrue(res.succeeded());
+      SQLRowStream stream = res.result();
+
+      stream
+        .resultSetClosedHandler(v -> should.fail(new RuntimeException("wrong state")))
+        .handler(row -> {
+          if (cnt.incrementAndGet() > 100) {
+            stream.close();
+          }
+        })
+        .endHandler(v -> should.fail(new RuntimeException()))
+        .exceptionHandler(should::fail);
+    });
+    test.await();
+  }
+
+  @Test
+  public void testSelectOneShot(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    client.query(sql, query -> {
+      should.assertFalse(query.failed());
+      final ResultSet resultSet = query.result();
+      should.assertNotNull(resultSet);
+      should.assertEquals(2, resultSet.getResults().size());
+      should.assertEquals("ID", resultSet.getColumnNames().get(0));
+      should.assertEquals("FNAME", resultSet.getColumnNames().get(1));
+      should.assertEquals("LNAME", resultSet.getColumnNames().get(2));
+      JsonArray result0 = resultSet.getResults().get(0);
+      should.assertEquals(1, (int) result0.getInteger(0));
+      should.assertEquals("john", result0.getString(1));
+      should.assertEquals("doe", result0.getString(2));
+      JsonArray result1 = resultSet.getResults().get(1);
+      should.assertEquals(2, (int) result1.getInteger(0));
+      should.assertEquals("jane", result1.getString(1));
+      should.assertEquals("doe", result1.getString(2));
+      test.complete();
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testSelectOneContext(TestContext should) {
+    final Async test = should.async();
+
+    Context context = vertx.getOrCreateContext();
+    context.runOnContext(v -> {
+      client.query("VALUES (CURRENT_TIMESTAMP)", res -> {
+        should.assertTrue(res.succeeded());
+        should.assertEquals(context, vertx.getOrCreateContext());
+        test.complete();
+      });
+    });
+    test.await();
+  }
+
+  @Test
+  public void testSelectOneShotFail(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECTA ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    client.query(sql, query -> {
+      should.assertTrue(query.failed());
+      test.complete();
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testSelectOneShotSingle(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table WHERE ID = 2";
+    client.querySingle(sql, query -> {
+      should.assertFalse(query.failed());
+      final JsonArray row = query.result();
+      should.assertNotNull(row);
+      should.assertEquals(2, (int) row.getInteger(0));
+      should.assertEquals("jane", row.getString(1));
+      should.assertEquals("doe", row.getString(2));
+      test.complete();
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStream(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    final AtomicInteger cnt = new AtomicInteger(0);
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+
+      res.result().queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .resultSetClosedHandler(v -> stream.moreResults())
+          .handler(row -> cnt.incrementAndGet())
+          .endHandler(v -> {
+            should.assertEquals(2, cnt.get());
+            test.complete();
+          }).exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamOnClosedConnection(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    final AtomicInteger cnt = new AtomicInteger(0);
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+        conn.close();
+
+        stream
+          .resultSetClosedHandler(v -> should.fail("Should not happen"))
+          .handler(row -> should.fail("Should not happen"))
+          .endHandler(v -> should.fail("Should not happen"))
+          .exceptionHandler(t -> test.complete());
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamWithParams(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table WHERE LNAME = ? ORDER BY ID";
+    final AtomicInteger cnt = new AtomicInteger(0);
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStreamWithParams(sql, new JsonArray().add("doe"), res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .handler(row -> cnt.incrementAndGet())
+          .endHandler(v -> {
+            should.assertEquals(2, cnt.get());
+            test.complete();
+          })
+          .exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamAbort(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .handler(row -> stream.close(close -> test.complete()))
+          .endHandler(v -> should.fail("Should not be called"))
+          .exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamPauseResume(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    final AtomicInteger cnt = new AtomicInteger(0);
+    final long[] t = {0, 0};
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .handler(row -> {
+            t[cnt.getAndIncrement()] = System.currentTimeMillis();
+            stream.pause();
+            vertx.setTimer(1000, v -> {
+              stream.resume();
+            });
+          })
+          .endHandler(v -> {
+            should.assertEquals(2, cnt.get());
+            should.assertTrue(t[1] - t[0] >= 1000);
+            test.complete();
+          }).exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testBigStream(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT * FROM big_table";
+    final AtomicInteger cnt = new AtomicInteger(0);
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .resultSetClosedHandler(v -> stream.moreResults())
+          .handler(row -> cnt.incrementAndGet())
+          .endHandler(v -> {
+            should.assertEquals(200, cnt.get());
+            test.complete();
+          }).exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamColumnResolution(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+    final AtomicInteger cnt = new AtomicInteger(0);
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        stream
+          .handler(row -> {
+            should.assertEquals("doe", row.getString(stream.column("lname")));
+            cnt.incrementAndGet();
+          })
+          .endHandler(v -> {
+            should.assertEquals(2, cnt.get());
+            test.complete();
+          })
+          .exceptionHandler(should::fail);
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testStreamGetColumns(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table ORDER BY ID";
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryStream(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        SQLRowStream stream = res1.result();
+
+        should.assertEquals(Arrays.asList("ID", "FNAME", "LNAME"), stream.columns());
+        // assert the collection is immutable
+        try {
+          stream.columns().add("durp!");
+          should.fail();
+        } catch (RuntimeException e) {
+          // expected!
+        }
+        test.complete();
+      });
+    });
+    test.await();
+  }
+
+  @Test
+  public void testSelectWithParameters(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID, FNAME, LNAME FROM select_table WHERE fname = ?";
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryWithParams(sql, new JsonArray().add("john"), res1 -> {
+        should.assertTrue(res1.succeeded());
+        ResultSet resultSet = res1.result();
+
+        should.assertNotNull(resultSet);
+        should.assertEquals(1, resultSet.getResults().size());
+        should.assertEquals("ID", resultSet.getColumnNames().get(0));
+        should.assertEquals("FNAME", resultSet.getColumnNames().get(1));
+        should.assertEquals("LNAME", resultSet.getColumnNames().get(2));
+        JsonArray result0 = resultSet.getResults().get(0);
+        should.assertEquals(1, (int) result0.getInteger(0));
+        should.assertEquals("john", result0.getString(1));
+        should.assertEquals("doe", result0.getString(2));
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testSelectWithLabels(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT ID as \"IdLabel\", FNAME as \"first_name\", LNAME as \"LAST.NAME\" FROM select_table WHERE fname = ?";
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.queryWithParams(sql, new JsonArray().add("john"), res1 -> {
+        should.assertTrue(res1.succeeded());
+        ResultSet resultSet = res1.result();
+
+        should.assertNotNull(resultSet);
+        should.assertEquals(1, resultSet.getResults().size());
+        should.assertEquals("IdLabel", resultSet.getColumnNames().get(0));
+        should.assertEquals("first_name", resultSet.getColumnNames().get(1));
+        should.assertEquals("LAST.NAME", resultSet.getColumnNames().get(2));
+        JsonArray result0 = resultSet.getResults().get(0);
+        should.assertEquals(1, (int) result0.getInteger(0));
+        should.assertEquals("john", result0.getString(1));
+        should.assertEquals("doe", result0.getString(2));
+        JsonObject row0 = resultSet.getRows().get(0);
+        should.assertEquals(1, (int) row0.getInteger("IdLabel"));
+        should.assertEquals("john", row0.getString("first_name"));
+        should.assertEquals("doe", row0.getString("LAST.NAME"));
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testSelectTx(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "INSERT INTO insert_table VALUES (?, ?, ?, ?);";
+    JsonArray params = new JsonArray().addNull().add("smith").add("john").add("2003-03-03");
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      should.assertNotNull(conn);
+
+      conn.setAutoCommit(false, res1 -> {
+        should.assertTrue(res1.succeeded());
+
+        conn
+          .setOptions(new SQLOptions().setAutoGeneratedKeys(true))
+          .updateWithParams(sql, params, res2 -> {
+            should.assertTrue(res2.succeeded());
+            UpdateResult resultSet = res2.result();
+
+            should.assertNotNull(resultSet);
+            should.assertEquals(1, resultSet.getUpdated());
+
+            int id = resultSet.getKeys().getInteger(0);
+            conn.queryWithParams("SELECT LNAME FROM insert_table WHERE id = ?", new JsonArray().add(id), res3 -> {
+              should.assertTrue(res3.succeeded());
+              ResultSet resultSet2 = res3.result();
+
+              should.assertFalse(resultSet2.getResults().isEmpty());
+              should.assertEquals("smith", resultSet2.getResults().get(0).getString(0));
+              test.complete();
+            });
+          });
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testInvalidSelect(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT FROM WHERE FOO BAR";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.query(sql, res1 -> {
+        should.assertTrue(res1.failed());
+        should.assertNotNull(res1.cause());
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testInsert(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "INSERT INTO insert_table VALUES (null, 'doe', 'john', '2001-01-01');";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.update(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+
+        should.assertEquals(1, res1.result().getUpdated());
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testNaturalInsert(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "INSERT INTO insert_table2 VALUES (1, 'doe', 'john', '2001-01-01');";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.update(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+
+        should.assertEquals(1, res1.result().getUpdated());
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testInsertWithParameters(TestContext should) {
+    final Async test = should.async();
+
+    final TimeZone tz = TimeZone.getDefault();
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      String sql = "INSERT INTO insert_table VALUES (?, ?, ?, ?);";
+      JsonArray params = new JsonArray().addNull().add("doe").add("jane").add("2002-02-02");
+      conn
+        .setOptions(new SQLOptions().setAutoGeneratedKeys(true))
+        .updateWithParams(sql, params, res1 -> {
+          should.assertTrue(res1.succeeded());
+          should.assertNotNull(res1.result());
+
+          UpdateResult result = res1.result();
+
+          should.assertEquals(1, result.getUpdated());
+          int id = result.getKeys().getInteger(0);
+          conn.queryWithParams("SElECT DOB FROM insert_table WHERE id=?;", new JsonArray().add(id), res2 -> {
+            should.assertTrue(res2.succeeded());
+            should.assertNotNull(res2.result());
+            ResultSet resultSet = res2.result();
+
+            should.assertEquals(1, resultSet.getResults().size());
+            should.assertEquals("2002-02-02", resultSet.getResults().get(0).getString(0));
+            TimeZone.setDefault(tz);
+            test.complete();
+          });
+        });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testUpdate(TestContext should) {
+    final Async test = should.async();
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      String sql = "UPDATE update_table SET fname='jane' WHERE id = 1";
+      conn.update(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        should.assertEquals(1, res1.result().getUpdated());
+
+        conn.query("SELECT fname FROM update_table WHERE id = 1", res2 -> {
+          should.assertTrue(res2.succeeded());
+          should.assertNotNull(res2.result());
+          ResultSet resultSet = res2.result();
+
+          should.assertEquals(1, resultSet.getResults().size());
+          should.assertEquals("jane", resultSet.getResults().get(0).getString(0));
+          test.complete();
+        });
+      });
+    });
+    test.await();
+  }
 
   @Test
   public void testUpdateWithParams(TestContext should) {
@@ -142,7 +739,6 @@ public class JDBCTest {
 
       String sql = "UPDATE update_table SET fname = ? WHERE id = ?";
       JsonArray params = new JsonArray().add("bob").add(1);
-
       conn.updateWithParams(sql, params, res1 -> {
         should.assertTrue(res1.succeeded());
         should.assertNotNull(res1.result());
@@ -151,17 +747,342 @@ public class JDBCTest {
         conn.query("SELECT fname FROM update_table WHERE id = 1", res2 -> {
           should.assertTrue(res2.succeeded());
           should.assertNotNull(res2.result());
+          ResultSet resultSet = res2.result();
 
-          should.assertEquals(1, res2.result().getResults().size());
-          should.assertEquals("bob", res2.result().getResults().get(0).getString(0));
-
-          conn.close(res3 -> {
-            should.assertTrue(res3.succeeded());
-            test.complete();
-          });
+          should.assertEquals(1, resultSet.getResults().size());
+          should.assertEquals("bob", resultSet.getResults().get(0).getString(0));
+          test.complete();
         });
       });
+    });
 
+    test.await();
+  }
+
+  @Test
+  public void testUpdateNoMatch(TestContext should) {
+    final Async test = should.async();
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      String sql = "UPDATE update_table SET fname='jane' WHERE id = -231";
+      conn.update(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        should.assertEquals(0, res1.result().getUpdated());
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testDelete(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "DELETE FROM delete_table WHERE id = 1;";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.update(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        should.assertEquals(1, res1.result().getUpdated());
+        test.complete();
+      });
+    });
+    test.await();
+  }
+
+  @Test
+  public void testDeleteWithParams(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "DELETE FROM delete_table WHERE id = ?;";
+    JsonArray params = new JsonArray().add(2);
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.updateWithParams(sql, params, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        should.assertEquals(1, res1.result().getUpdated());
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testClose(TestContext should) {
+    final Async test = should.async();
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.query("SELECT 1 FROM select_table", res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+
+        conn.close(res2 -> {
+          should.assertTrue(res2.succeeded());
+          test.complete();
+        });
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testCloseThenQuery(TestContext should) {
+    final Async test = should.async();
+
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+
+      conn.close(res1 -> {
+        should.assertTrue(res1.succeeded());
+
+        conn.query("SELECT 1 FROM select_table", res2 -> {
+          should.assertTrue(res2.failed());
+          should.assertNotNull(res2.cause());
+          test.complete();
+        });
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testCommit(TestContext should) {
+    testTx(3, true, should);
+  }
+
+  @Test
+  public void testRollback(TestContext should) {
+    testTx(5, false, should);
+  }
+
+  @Test
+  public void testBlob(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT b FROM blob_table";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.query(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        ResultSet resultSet = res1.result();
+
+        should.assertEquals(1, resultSet.getResults().size());
+        should.assertNotNull(resultSet.getResults().get(0).getBinary(0));
+        test.complete();
+      });
+    });
+    test.await();
+  }
+
+  @Test
+  public void testClob(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT c FROM blob_table";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.query(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        ResultSet resultSet = res1.result();
+
+        should.assertEquals(1, resultSet.getResults().size());
+        should.assertNotNull(resultSet.getResults().get(0).getString(0));
+        test.complete();
+      });
+    });
+    test.await();
+  }
+
+  @Test
+  public void testArray(TestContext should) {
+    final Async test = should.async();
+
+    String sql = "SELECT a FROM blob_table";
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      conn.query(sql, res1 -> {
+        should.assertTrue(res1.succeeded());
+        should.assertNotNull(res1.result());
+        ResultSet resultSet = res1.result();
+
+        should.assertEquals(1, resultSet.getResults().size());
+        should.assertNotNull(resultSet.getResults().get(0).getJsonArray(0));
+        test.complete();
+      });
+    });
+
+    test.await();
+  }
+
+  @Test
+  public void testWorkerPerConnection(TestContext should) {
+    final Async test = should.async();
+    Context context = vertx.getOrCreateContext();
+
+    int numConns = 4;
+    AtomicInteger count = new AtomicInteger();
+    ArrayList<SQLConnection> conns = new ArrayList<>();
+    for (int i = 0; i < numConns; i++) {
+      client.getConnection(res -> {
+        should.assertTrue(res.succeeded());
+        SQLConnection conn = res.result();
+        conns.add(conn);
+        if (count.incrementAndGet() == numConns) {
+          context.runOnContext(v -> {
+            for (SQLConnection conn1 : conns) {
+              conn1.setAutoCommit(false, res1 -> {
+                should.assertTrue(res1.succeeded());
+
+                conn1.execute("LOCK TABLE insert_table WRITE", res2 -> {
+                  should.assertTrue(res2.succeeded());
+
+                  String sql = "INSERT INTO insert_table VALUES (null, 'doe', 'john', '2001-01-01');";
+                  conn1.update(sql, res3 -> {
+                    should.assertTrue(res3.succeeded());
+
+                    conn1.commit(res4 -> {
+                      should.assertTrue(res4.succeeded());
+
+                      conn1.close(res5 -> {
+                        should.assertTrue(res5.succeeded());
+
+                        if (count.decrementAndGet() == 0) {
+                          test.complete();
+                        }
+                      });
+                    });
+                  });
+                });
+              });
+            }
+          });
+        }
+      });
+    }
+    test.await();
+  }
+
+  @Test
+  public void testSameContext(TestContext should) {
+    final Async test = should.async();
+
+    Context ctx = vertx.getOrCreateContext();
+    ctx.runOnContext(v -> {
+      client.getConnection(res -> {
+        should.assertTrue(res.succeeded());
+        SQLConnection conn = res.result();
+        conn.query("SELECT a FROM blob_table", res1 -> {
+          should.assertTrue(res1.succeeded());
+          should.assertEquals(Vertx.currentContext(), ctx);
+          test.complete();
+        });
+      });
+    });
+
+    test.await();
+  }
+
+  private void testTx(int inserts, boolean commit, TestContext should) {
+    final Async test = should.async();
+
+    String sql = "INSERT INTO insert_table VALUES (?, ?, ?, ?);";
+    JsonArray params = new JsonArray().addNull().add("smith").add("john").add("2003-03-03");
+    List<Integer> insertIds = new CopyOnWriteArrayList<>();
+
+    AtomicInteger counter = new AtomicInteger(0);
+    AtomicReference<SQLConnection> connRef = new AtomicReference<>();
+    client.getConnection(res -> {
+      should.assertTrue(res.succeeded());
+      SQLConnection conn = res.result();
+      should.assertNotNull(conn);
+
+      connRef.set(conn);
+      conn.setAutoCommit(false, res1 -> {
+        should.assertTrue(res1.succeeded());
+
+        for (int i = 0; i < inserts; i++) {
+          conn
+            .setOptions(new SQLOptions().setAutoGeneratedKeys(true))
+            .updateWithParams(sql, params, res2 -> {
+              should.assertTrue(res2.succeeded());
+              should.assertNotNull(res2.result());
+              should.assertEquals(1, res2.result().getUpdated());
+              int id = res2.result().getKeys().getInteger(0);
+              insertIds.add(id);
+              if (counter.incrementAndGet() == inserts) {
+                // second step
+                StringBuilder selectSql = new StringBuilder("SELECT * FROM insert_table WHERE");
+                JsonArray selectParams = new JsonArray();
+                for (int j = 0; j < insertIds.size(); j++) {
+                  selectParams.add(insertIds.get(j));
+                  if (j == 0) {
+                    selectSql.append(" id = ?");
+                  } else {
+                    selectSql.append(" OR id = ?");
+                  }
+                }
+
+                SQLConnection conn1 = connRef.get();
+                if (commit) {
+                  conn1.commit(res3 -> {
+                    should.assertTrue(res3.succeeded());
+
+                    client.getConnection(res4 -> {
+                      should.assertTrue(res4.succeeded());
+                      should.assertNotNull(res4.result());
+                      SQLConnection newconn = res4.result();
+
+                      newconn.queryWithParams(selectSql.toString(), selectParams, res5 -> {
+                        should.assertTrue(res5.succeeded());
+                        should.assertNotNull(res5.result());
+                        should.assertEquals(inserts, res5.result().getResults().size());
+                        test.complete();
+                      });
+                    });
+                  });
+                } else {
+                  conn1.rollback(res3 -> {
+                    should.assertTrue(res3.succeeded());
+
+                    client.getConnection(res4 -> {
+                      should.assertTrue(res4.succeeded());
+                      should.assertNotNull(res4.result());
+                      SQLConnection newconn = res4.result();
+
+                      newconn.queryWithParams(selectSql.toString(), selectParams, res5 -> {
+                        should.assertTrue(res5.succeeded());
+                        should.assertNotNull(res5.result());
+                        should.assertTrue(res5.result().getResults().isEmpty());
+                        test.complete();
+                      });
+                    });
+                  });
+                }
+              }
+            });
+        }
+      });
     });
 
     test.await();

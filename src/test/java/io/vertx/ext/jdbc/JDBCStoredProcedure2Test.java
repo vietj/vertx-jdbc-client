@@ -50,29 +50,30 @@ public class JDBCStoredProcedure2Test extends VertxTestBase {
 
   protected static JsonObject config() {
     return new JsonObject()
-        .put("url", "jdbc:mysql://localhost/test")
-        .put("driver_class", "com.mysql.jdbc.Driver")
-        .put("user", "root")
-        .put("password", "mypassword");
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
+      .put("url", "jdbc:mysql://localhost/test")
+      .put("driver_class", "com.mysql.jdbc.Driver")
+      .put("user", "root")
+      .put("password", "mypassword");
   }
 
 
   /**
    * This test has been marked as ignored since it can only run on mysql and it might not be 100% correct.
    * A procedure is not supposed to return data by definition however MySQL allows this mix...
-   *
+   * <p>
    * This requires the following proc to be installed on a MySQL server:
-   *
+   * <p>
    * create DATABASE test;
    * use test;
-   *
+   * <p>
    * DROP PROCEDURE `proc_test`;
-   *
+   * <p>
    * DELIMITER $$
    * CREATE PROCEDURE `proc_test`(IN firstname varchar(45), OUT lastname varchar(45))
    * BEGIN
-   *   select concat(firstname, '!!!') into lastname;
-   *   select now(6);
+   * select concat(firstname, '!!!') into lastname;
+   * select now(6);
    * END$$
    * DELIMITER ;
    */

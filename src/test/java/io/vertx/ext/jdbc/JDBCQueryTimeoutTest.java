@@ -48,8 +48,9 @@ public class JDBCQueryTimeoutTest extends VertxTestBase {
 
   protected static JsonObject config() {
     return new JsonObject()
-            .put("url", "jdbc:derby:memory:myDB2;create=true")
-            .put("driver_class", "org.apache.derby.jdbc.EmbeddedDriver");
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
+      .put("url", "jdbc:derby:memory:myDB2;create=true")
+      .put("driver_class", "org.apache.derby.jdbc.EmbeddedDriver");
   }
 
   @Test

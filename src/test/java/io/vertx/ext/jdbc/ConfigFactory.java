@@ -31,6 +31,7 @@ public class ConfigFactory {
     final int id = idGen.incrementAndGet();
 
     return new JsonObject()
+      .put("provider_class", "io.vertx.ext.jdbc.spi.impl.C3P0DataSourceProvider")
       .put("url", "jdbc:h2:mem:test-" + id + ";DB_CLOSE_DELAY=-1")
       .put("driver_class", "org.h2.Driver")
       // Agroal CP config
