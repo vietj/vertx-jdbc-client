@@ -70,13 +70,19 @@ class JDBCSQLRowStream implements SQLRowStream {
     this.fetchSize = fetchSize;
     this.rs = rs;
     this.statementsQueue = statementsQueue;
-
     accumulator = new ArrayDeque<>(fetchSize);
-    metaData = rs.getMetaData();
-    cols = metaData.getColumnCount();
+
+    if (rs != null) {
+      metaData = rs.getMetaData();
+      cols = metaData.getColumnCount();
+      rsClosed.set(false);
+    } else {
+      cols = 0;
+      rsClosed.set(true);
+    }
+
     paused.set(true);
     stClosed.set(false);
-    rsClosed.set(false);
     // the first rs is populated in the constructor
     more.set(true);
   }
@@ -203,6 +209,12 @@ class JDBCSQLRowStream implements SQLRowStream {
   }
 
   private void readRows(Future<Void> fut) {
+    // when RS is null we can skip this call
+    if (rs == null) {
+      fut.complete();
+      return;
+    }
+
     try {
       while (accumulator.size() < fetchSize && rs.next()) {
         JsonArray result = new JsonArray();

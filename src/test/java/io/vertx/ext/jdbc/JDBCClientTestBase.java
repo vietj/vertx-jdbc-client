@@ -38,6 +38,7 @@ public abstract class JDBCClientTestBase extends VertxTestBase {
   static {
     System.setProperty("textdb.allow_full_path", "true");
     //TODO: Create table with more types for testing
+    SQL.add("drop procedure if exists sp_say_hi;");
     SQL.add("drop table if exists select_table;");
     SQL.add("drop table if exists insert_table;");
     SQL.add("drop table if exists insert_table2;");
@@ -45,6 +46,7 @@ public abstract class JDBCClientTestBase extends VertxTestBase {
     SQL.add("drop table if exists delete_table;");
     SQL.add("drop table if exists blob_table;");
     SQL.add("drop table if exists big_table;");
+    SQL.add("drop table if exists users;");
     SQL.add("create table select_table (id int, lname varchar(255), fname varchar(255) );");
     SQL.add("insert into select_table values (1, 'doe', 'john');");
     SQL.add("insert into select_table values (2, 'doe', 'jane');");
@@ -61,6 +63,21 @@ public abstract class JDBCClientTestBase extends VertxTestBase {
     for (int i = 0; i < 200; i++) {
       SQL.add("insert into big_table values(" + i + ", 'Hello')");
     }
+
+    SQL.add("CREATE TABLE users (id INTEGER, name VARCHAR(25), PRIMARY KEY(id))");
+    SQL.add("INSERT INTO users VALUES(1, 'Paulo')");
+    SQL.add("INSERT INTO users VALUES(2, 'Julien')");
+
+
+    SQL.add(
+      "CREATE PROCEDURE sp_say_hi(IN greeting_p VARCHAR(10)) " +
+        "READS SQL DATA DYNAMIC RESULT SETS 2 " +
+        "BEGIN ATOMIC " +
+        "DECLARE result CURSOR WITH RETURN FOR SELECT COALESCE(greeting_p, 'Hi')+' '+name as greeting FROM users FOR READ ONLY; " +
+        "DECLARE result1 CURSOR WITH RETURN FOR SELECT * FROM users FOR READ ONLY; " +
+        "OPEN result; " +
+        "OPEN result1; " +
+        "END");
   }
 
   @BeforeClass

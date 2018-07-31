@@ -27,12 +27,15 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author <a href="mailto:plopes@redhat.com">Paulo Lopes</a>
  */
 public class StreamQuery extends AbstractJDBCAction<SQLRowStream> {
 
+  private static final Pattern CALL = Pattern.compile("=?\\s*call\\s+", Pattern.CASE_INSENSITIVE + Pattern.MULTILINE);
   private static final int DEFAULT_ROW_STREAM_FETCH_SIZE = 128;
 
   private final String sql;
@@ -44,6 +47,10 @@ public class StreamQuery extends AbstractJDBCAction<SQLRowStream> {
     this.sql = sql;
     this.in = in;
     this.statementsQueue = statementsQueue;
+    // set the default fetch size
+    if (options.getFetchSize() <= 0) {
+      options.setFetchSize(DEFAULT_ROW_STREAM_FETCH_SIZE);
+    }
   }
 
   @Override
@@ -51,7 +58,13 @@ public class StreamQuery extends AbstractJDBCAction<SQLRowStream> {
     PreparedStatement st = null;
 
     try {
-      st = conn.prepareStatement(sql);
+      // identify if this is a callable statement or a prepared statement
+      Matcher matcher = CALL.matcher(sql);
+      if (matcher.find()) {
+        st = conn.prepareCall(sql);
+      } else {
+        st = conn.prepareStatement(sql);
+      }
       // apply statement options
       applyStatementOptions(st);
 
@@ -59,7 +72,9 @@ public class StreamQuery extends AbstractJDBCAction<SQLRowStream> {
       ResultSet rs = null;
 
       try {
-        rs = st.executeQuery();
+        if (st.execute()) {
+          rs = st.getResultSet();
+        }
 
         final int fetchSize;
 

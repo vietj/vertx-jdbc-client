@@ -126,7 +126,7 @@ public class JDBCClientTest extends JDBCClientTestBase {
       res.resultSetClosedHandler(v -> {
         fail(new RuntimeException("wrong state"));
       }).handler(row -> {
-        if(cnt.incrementAndGet() > 100) {
+        if (cnt.incrementAndGet() > 100) {
           res.close();
         }
       }).endHandler(v -> {
@@ -323,6 +323,32 @@ public class JDBCClientTest extends JDBCClientTestBase {
       }).exceptionHandler(t0 -> {
         fail(t0);
       });
+    }));
+
+    await();
+  }
+
+  @Test
+  public void testStreamMultipleCursors() {
+    String sql = "CALL sp_say_hi(?)";
+    final AtomicInteger cnt = new AtomicInteger(0);
+    final long[] t = {0, 0};
+    connection().queryStreamWithParams(sql, new JsonArray().add("Hola"), onSuccess(res -> {
+      res.handler(
+        row -> {
+          System.out.println(row);
+        })
+        .resultSetClosedHandler(v -> {
+          cnt.incrementAndGet();
+          res.moreResults();
+        })
+        .endHandler(v -> {
+          // we expect 3 calls (first the call itself, then the 2 cursors)
+          assertEquals(3, cnt.get());
+          testComplete();
+        }).exceptionHandler(t0 -> {
+          fail(t0);
+        });
     }));
 
     await();
