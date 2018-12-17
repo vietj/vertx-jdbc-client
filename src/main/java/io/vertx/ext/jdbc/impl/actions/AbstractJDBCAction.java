@@ -39,12 +39,12 @@ public abstract class AbstractJDBCAction<T> {
   protected final ContextInternal ctx;
   protected final JDBCStatementHelper helper;
 
-  protected AbstractJDBCAction(Vertx vertx, SQLOptions options, ContextInternal ctx) {
-    this(vertx, null, options, ctx);
+  protected AbstractJDBCAction(SQLOptions options, ContextInternal ctx) {
+    this(null, options, ctx);
   }
 
-  protected AbstractJDBCAction(Vertx vertx, JDBCStatementHelper helper, SQLOptions options, ContextInternal ctx) {
-    this.vertx = vertx;
+  protected AbstractJDBCAction(JDBCStatementHelper helper, SQLOptions options, ContextInternal ctx) {
+    this.vertx = ctx.owner();
     this.options = options;
     this.ctx = ctx;
     this.helper = helper;
