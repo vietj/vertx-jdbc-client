@@ -724,12 +724,14 @@ public class JDBCClientTest extends JDBCClientTestBase {
 
   @Test
   public void testSameContext() {
+    SQLConnection conn = connection();
     Context ctx = vertx.getOrCreateContext();
-    SQLConnection conn = connection(ctx);
-    conn.query("SELECT a FROM blob_table", onSuccess(rs -> {
-      assertSame(Vertx.currentContext(), ctx);
-      testComplete();
-    }));
+    ctx.runOnContext(v -> {
+      conn.query("SELECT a FROM blob_table", onSuccess(rs -> {
+        assertSame(Vertx.currentContext(), ctx);
+        testComplete();
+      }));
+    });
     await();
   }
 
@@ -801,13 +803,9 @@ public class JDBCClientTest extends JDBCClientTestBase {
   }
 
   protected SQLConnection connection() {
-    return connection(vertx.getOrCreateContext());
-  }
-
-  protected SQLConnection connection(Context context) {
     CountDownLatch latch = new CountDownLatch(1);
     AtomicReference<SQLConnection> ref = new AtomicReference<>();
-    context.runOnContext(v -> {
+    vertx.getOrCreateContext().runOnContext(v -> {
       client.getConnection(onSuccess(conn -> {
         ref.set(conn);
         latch.countDown();

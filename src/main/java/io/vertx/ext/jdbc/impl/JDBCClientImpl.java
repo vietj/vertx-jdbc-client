@@ -30,6 +30,7 @@ import io.vertx.core.shareddata.LocalMap;
 import io.vertx.core.shareddata.Shareable;
 import io.vertx.core.spi.metrics.PoolMetrics;
 import io.vertx.core.spi.metrics.VertxMetrics;
+import io.vertx.core.spi.tracing.Tracer;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.jdbc.impl.actions.AbstractJDBCAction;
 import io.vertx.ext.jdbc.impl.actions.JDBCQuery;
@@ -146,18 +147,31 @@ public class JDBCClientImpl implements JDBCClient {
     return this;
   }
 
-  private <T> void executeDirect(Context ctx, AbstractJDBCAction<T> action, Handler<AsyncResult<T>> handler) {
+  private <T> void executeDirect(ContextInternal ctx, AbstractJDBCAction<T> action, Handler<AsyncResult<T>> handler) {
     getConnection(ctx, ar1 -> {
       Future<T> fut = Future.future();
       fut.setHandler(ar2 -> ctx.runOnContext(v -> handler.handle(ar2)));
       if (ar1.succeeded()) {
         JDBCConnectionImpl conn = (JDBCConnectionImpl) ar1.result();
+        Tracer tracer = ctx.owner().tracer();
+        Object trace;
+        if (tracer != null) {
+          trace = tracer.sendRequest(ctx.localContextData(), action);
+        } else {
+          trace = null;
+        }
+        Throwable failure = null;
+        T result = null;
         try {
-          T result = action.execute(conn.conn);
+          result = action.execute(conn.conn);
           fut.complete(result);
         } catch (Exception e) {
+          failure = e;
           fut.fail(e);
         } finally {
+          if (tracer != null) {
+            tracer.receiveResponse(ctx.localContextData(), result, trace, failure);
+          }
           if (metrics != null) {
             metrics.end(conn.metric, true);
           }
@@ -200,7 +214,7 @@ public class JDBCClientImpl implements JDBCClient {
           execMetric = metrics.begin(queueMetric);
         }
         // wrap it
-        res.complete(new JDBCConnectionImpl(ctx, helper, conn, metrics, execMetric));
+        res.complete(new JDBCConnectionImpl(vertx, helper, conn, metrics, execMetric));
       } catch (SQLException e) {
         if (metrics != null) {
           metrics.rejected(queueMetric);

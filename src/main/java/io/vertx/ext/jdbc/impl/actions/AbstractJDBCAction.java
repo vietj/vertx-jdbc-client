@@ -22,6 +22,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.impl.ContextInternal;
 import io.vertx.core.impl.TaskQueue;
+import io.vertx.core.spi.tracing.Tracer;
 import io.vertx.ext.sql.SQLOptions;
 
 import java.sql.Connection;
@@ -63,12 +64,28 @@ public abstract class AbstractJDBCAction<T> {
   }
 
   public void execute(Connection conn, TaskQueue statementsQueue, Handler<AsyncResult<T>> resultHandler) {
-    ctx.executeBlocking(future -> handle(conn, future), statementsQueue, resultHandler);
+    Tracer tracer = ctx.owner().tracer();
+    Object trace;
+    if (tracer != null) {
+      trace = tracer.sendRequest(ctx.localContextData(), this);
+    } else {
+      trace = null;
+    }
+    ctx.<T>executeBlocking(future -> handle(conn, future), statementsQueue, ar -> {
+      if (tracer != null) {
+        tracer.receiveResponse(ctx.localContextData(), ar.result(), trace, ar.cause());
+      }
+      resultHandler.handle(ar);
+    });
   }
 
   public abstract T execute(Connection conn) throws SQLException;
 
   protected abstract String name();
+
+  public String statement() {
+    return name();
+  }
 
   void applyStatementOptions(Statement statement) throws SQLException {
     if (options != null) {

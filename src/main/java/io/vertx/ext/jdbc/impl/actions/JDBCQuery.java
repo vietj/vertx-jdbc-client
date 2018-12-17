@@ -38,6 +38,11 @@ public class JDBCQuery extends AbstractJDBCAction<io.vertx.ext.sql.ResultSet> {
   }
 
   @Override
+  public String statement() {
+    return sql;
+  }
+
+  @Override
   public io.vertx.ext.sql.ResultSet execute(Connection conn) throws SQLException {
     try (PreparedStatement statement = conn.prepareStatement(sql)) {
       // apply statement options
